@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/mnt/d/github/ECE382V-Security/Lab 1/build",
+  "command": "/usr/bin/gcc   -g -o CMakeFiles/lab1_client.dir/client.c.o -c \"/mnt/d/github/ECE382V-Security/Lab 1/client.c\"",
+  "file": "/mnt/d/github/ECE382V-Security/Lab 1/client.c"
+},
+{
+  "directory": "/mnt/d/github/ECE382V-Security/Lab 1/build",
+  "command": "/usr/bin/gcc   -g -o CMakeFiles/lab1_server.dir/server.c.o -c \"/mnt/d/github/ECE382V-Security/Lab 1/server.c\"",
+  "file": "/mnt/d/github/ECE382V-Security/Lab 1/server.c"
+}
+]

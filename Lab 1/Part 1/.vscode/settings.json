@@ -1,0 +1,7 @@
+{
+    "files.associations": {
+        "*.x": "linkerscript",
+        "signum-arch.h": "c",
+        "ctype.h": "c"
+    }
+}
