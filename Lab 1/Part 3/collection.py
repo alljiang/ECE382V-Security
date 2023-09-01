@@ -22,22 +22,24 @@ SITES = [
     "https://www.utdallas.edu/"
 ]
 
-driver = webdriver.Firefox()
+options = webdriver.FirefoxOptions()
+options.add_argument('--headless')
+driver = webdriver.Firefox(options=options)
 
 for site_i in range(0, 10):
     site = SITES[site_i]
     driver.get(site)
-    os.mkdir("output/" + str(site_i))
+    path = "output/" + str(site_i)
+    if not os.path.exists(path):
+        os.mkdir(path)
 
     for i in range(0, 10):
         print("Capturing " + site + "\t Iteration " + str(i))
-        p = subprocess.Popen(["tcpdump", "-w", "output/" + str(site_i) + "/" + str(i) + ".pcap"]) 
-        p.communicate()
+        p = subprocess.Popen(["sudo", "tcpdump", "--print", "-w", "output/" + str(site_i) + "/" + str(i) + ".pcap"]) 
+#        p.communicate()
         driver.refresh()
-        time.sleep(5)
-        p.send_signal(subprocess.signal.SIGTERM)
+        time.sleep(20)
+        p.terminate()  
         time.sleep(5)
 
-
-driver.get("http://www.python.org")
 driver.quit()
