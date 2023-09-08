@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <string.h>
 
+const int NUM_ROUNDS = 14;
+const int nk         = 8;
+const int nb         = 4;
+
 void
 print_4by4(unsigned char text[]) {
 	for (int row = 0; row < 4; row++) {
@@ -49,6 +53,186 @@ galois_field_multiply(uint16_t byte1, uint16_t byte2) {
 	}
 
 	return result;
+}
+
+void
+calculate_round_keys(uint8_t *key, uint8_t round_keys[][4], uint8_t *s) {
+	for (int i = 0; i < 8; i++) {
+		round_keys[i][0] = key[i * 4];
+		round_keys[i][1] = key[i * 4 + 1];
+		round_keys[i][2] = key[i * 4 + 2];
+		round_keys[i][3] = key[i * 4 + 3];
+	}
+
+	for (int i = nk; i < nb * (NUM_ROUNDS + 1); i++) {
+		uint8_t temp[4];
+		memcpy(temp, round_keys[i - 1], 4);
+		if (i % nk == 0) {
+			// rotate
+			uint8_t temp2 = temp[0];
+			for (int j = 0; j < 3; j++) { temp[j] = temp[j + 1]; }
+			temp[3] = temp2;
+
+			// substitute
+			for (int j = 0; j < 4; j++) { temp[j] = s[temp[j]]; }
+
+			// xor with Rcon[i/nk]
+			// clang-format off
+		    const uint8_t round_constants[] = {0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36,0x6c,0xd8,0xab,0x4d};
+			// clang-format on
+			temp[0] ^= round_constants[i / nk];
+		} else if (i % nk == 4) {
+			// substitute
+			for (int j = 0; j < 4; j++) { temp[j] = s[temp[j]]; }
+		}
+		// xor with previous column
+		for (int j = 0; j < 4; j++) {
+			round_keys[i][j] = temp[j] ^ round_keys[i - nk][j];
+		}
+	}
+}
+
+void
+encode(uint8_t *plaintext,
+       uint8_t *ciphertext_buf,
+       uint8_t *key,
+       uint8_t round_keys[][4],
+       uint8_t *s) {
+	// XOR plaintext with key
+	uint8_t intermediate[16];
+	for (int i = 0; i < 16; i++) { intermediate[i] = plaintext[i] ^ key[i]; }
+
+	for (int round = 0; round < NUM_ROUNDS; round++) {
+		// shuffle array with s-box s tart
+		for (int i = 0; i < 16; i++) { intermediate[i] = s[intermediate[i]]; }
+		// shuffle array with s-box end
+
+		// shift array rows start
+		for (int col = 0; col < 4; col++) {
+			uint8_t temp[4];
+			for (int i = 0; i < 4; i++) { temp[i] = intermediate[i * 4 + col]; }
+			for (int rotations = 0; rotations < col; rotations++) {
+				uint8_t temp2 = temp[0];
+				for (int i = 0; i < 3; i++) { temp[i] = temp[i + 1]; }
+				temp[3] = temp2;
+			}
+			for (int i = 0; i < 4; i++) { intermediate[i * 4 + col] = temp[i]; }
+		}
+
+		uint8_t temp[16];
+		if (round != NUM_ROUNDS - 1) {
+			// flip rows and columns
+			for (int row = 0; row < 4; row++) {
+				for (int col = 0; col < 4; col++) {
+					temp[row * 4 + col] = intermediate[col * 4 + row];
+				}
+			}
+			memcpy(intermediate, temp, 16);
+
+			// shift array rows end
+
+			// mix columns start
+			// clang-format off
+        uint8_t galois_field[16] = {
+            0x02, 0x03, 0x01, 0x01,
+            0x01, 0x02, 0x03, 0x01,
+            0x01, 0x01, 0x02, 0x03,
+            0x03, 0x01, 0x01, 0x02
+        };
+			// clang-format on
+
+			uint8_t mat_mult_result[16];
+			for (int col = 0; col < 4; col++) {
+				// matrix multiply against galois field
+				for (int row = 0; row < 4; row++) {
+					uint8_t result = 0;
+					for (int i = 0; i < 4; i++) {
+						uint8_t num1 = intermediate[i * 4 + col];
+						uint8_t num2 = galois_field[row * 4 + i];
+						result ^= galois_field_multiply(num1, num2);
+					}
+					mat_mult_result[row * 4 + col] = result;
+				}
+			}
+			memcpy(intermediate, mat_mult_result, 16);
+
+			// flip rows and columns
+			for (int row = 0; row < 4; row++) {
+				for (int col = 0; col < 4; col++) {
+					temp[row * 4 + col] = intermediate[col * 4 + row];
+				}
+			}
+			memcpy(intermediate, temp, 16);
+			// mix columns end
+		}
+
+		// add round key start
+		for (int c = 0; c < nb; c++) {
+			for (int r = 0; r < 4; r++) {
+				intermediate[c * 4 + r] ^= round_keys[(round + 1) * nb + c][r];
+			}
+		}
+		// add round key end
+	}
+	memcpy(ciphertext_buf, intermediate, 16);
+}
+
+void
+decode(uint8_t *ciphertext,
+       uint8_t *plaintext_buf,
+       uint8_t *key,
+       uint8_t round_keys[][4],
+       uint8_t *s) {
+	uint8_t intermediate[16];
+	uint8_t s_inverse[256];
+
+	for (int i = 0; i < 256; i++) {
+        s_inverse[s[i]] = i;
+    }
+
+	// add round key
+	for (int c = 0; c < 4; c++) {
+		for (int r = 0; r < 4; r++) {
+			intermediate[c * 4 + r] ^= round_keys[NUM_ROUNDS * nb + c][r];
+		}
+	}
+	print_4by4(ciphertext);
+	printf("\n");
+
+	for (int round = NUM_ROUNDS - 1; round >= 1; round--) {
+		// inv s box
+        for (int i = 0; i < 16; i++) { intermediate[i] = s_inverse[intermediate[i]]; }
+
+		print_4by4(intermediate);
+		printf("\n");
+
+		// inv shift array rows start
+		for (int col = 0; col < 4; col++) {
+			uint8_t temp[4];
+			for (int i = 0; i < 4; i++) { temp[i] = intermediate[i * 4 + col]; }
+			for (int rotations = 0; rotations < col; rotations++) {
+				uint8_t temp2 = temp[3];
+				for (int i = 3; i > 0; i--) { temp[i] = temp[i - 1]; }
+				temp[0] = temp2;
+			}
+			for (int i = 0; i < 4; i++) { intermediate[i * 4 + col] = temp[i]; }
+		}
+		// inv shift array rows end
+
+		// inv subbytes
+
+		// add round key
+		for (int c = 0; c < nb; c++) {
+			for (int r = 0; r < 4; r++) {
+				intermediate[c * 4 + r] ^= round_keys[round * nb + c][r];
+				// print round key
+				printf("%02x ", round_keys[round * nb + c][r]);
+			}
+		}
+		printf("\n");
+
+		// inv mix columns
+	}
 }
 
 int
@@ -118,137 +302,22 @@ main() {
 	unsigned char decrypted_text[32];
 	// END DO NOT MODIFY
 
+	// create round key columns
+	uint8_t round_keys[(NUM_ROUNDS + 1) * nb][4];
+	calculate_round_keys(key[0], round_keys, s);
+
 	// YOUR CODE HERE: Implement AES encryption, write the encrypted output of
 	// plaintext to enc_buf
 
-	const int NUM_ROUNDS = 14;
-	const int nk = 8;
-	const int nb = 4;
+	encode(plaintext[0], enc_buf, key[0], round_keys, s);
 
-	// create round key columns
-	uint8_t round_keys[(NUM_ROUNDS + 1) * nb][4];
+	// YOUR CODE HERE: Implemente AES decryption, write the decrypted
+	// output of enc_buf to decrypted_text
 
-	for (int i = 0; i < 8; i++) {
-		round_keys[i][0] = key[0][i * 4];
-		round_keys[i][1] = key[0][i * 4 + 1];
-		round_keys[i][2] = key[0][i * 4 + 2];
-		round_keys[i][3] = key[0][i * 4 + 3];
-	}
+	decode(enc_buf, decrypted_text, key[0], round_keys, s);
 
-	for (int i = nk; i < nb * (NUM_ROUNDS + 1); i++) {
-		uint8_t temp[4];
-		memcpy(temp, round_keys[i - 1], 4);
-		if (i % nk == 0) {
-			// rotate
-			uint8_t temp2 = temp[0];
-			for (int j = 0; j < 3; j++) { temp[j] = temp[j + 1]; }
-			temp[3] = temp2;
-
-			// substitute
-			for (int j = 0; j < 4; j++) { temp[j] = s[temp[j]]; }
-
-			// xor with Rcon[i/nk]
-			// clang-format off
-		    const uint8_t round_constants[] = {0x00,0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36,0x6c,0xd8,0xab,0x4d};
-			// clang-format on
-			temp[0] ^= round_constants[i / nk];
-		} else if (i % nk == 4) {
-			// substitute
-			for (int j = 0; j < 4; j++) { temp[j] = s[temp[j]]; }
-		}
-		// xor with previous column
-		for (int j = 0; j < 4; j++) {
-			round_keys[i][j] = temp[j] ^ round_keys[i - nk][j];
-		}
-	}
-
-	// XOR plaintext with key
-	uint8_t intermediate[16];
-	for (int i = 0; i < 16; i++) {
-		intermediate[i] = plaintext[0][i] ^ key[0][i];
-	}
-
-	for (int round = 0; round < NUM_ROUNDS; round++) {
-		// shuffle array with s-box s tart
-		for (int i = 0; i < 16; i++) { intermediate[i] = s[intermediate[i]]; }
-		// shuffle array with s-box end
-
-		// shift array rows start
-		for (int col = 0; col < 4; col++) {
-			uint8_t temp[4];
-			for (int i = 0; i < 4; i++) { temp[i] = intermediate[i * 4 + col]; }
-			for (int rotations = 0; rotations < col; rotations++) {
-                uint8_t temp2 = temp[0];
-                for (int i = 0; i < 3; i++) { temp[i] = temp[i + 1]; }
-                temp[3] = temp2;
-			}
-            for (int i = 0; i < 4; i++) { intermediate[i * 4 + col] = temp[i]; }
-		}
-
-        uint8_t temp[16];
-        if (round != NUM_ROUNDS - 1) {
-            // flip rows and columns
-            for (int row = 0; row < 4; row++) {
-                for (int col = 0; col < 4; col++) {
-                    temp[row * 4 + col] = intermediate[col * 4 + row];
-                }
-            }
-            memcpy(intermediate, temp, 16);
-
-		// shift array rows end
-
-		// mix columns start
-		// clang-format off
-        uint8_t galois_field[16] = {
-            0x02, 0x03, 0x01, 0x01,
-            0x01, 0x02, 0x03, 0x01,
-            0x01, 0x01, 0x02, 0x03,
-            0x03, 0x01, 0x01, 0x02
-        };
-		// clang-format on
-
-		uint8_t mat_mult_result[16];
-		for (int col = 0; col < 4; col++) {
-			// matrix multiply against galois field
-			for (int row = 0; row < 4; row++) {
-				uint8_t result = 0;
-				for (int i = 0; i < 4; i++) {
-					uint8_t num1 = intermediate[i * 4 + col];
-					uint8_t num2 = galois_field[row * 4 + i];
-					result ^= galois_field_multiply(num1, num2);
-				}
-				mat_mult_result[row * 4 + col] = result;
-			}
-		}
-		memcpy(intermediate, mat_mult_result, 16);
-
-		// flip rows and columns
-		for (int row = 0; row < 4; row++) {
-			for (int col = 0; col < 4; col++) {
-				temp[row * 4 + col] = intermediate[col * 4 + row];
-			}
-		}
-		memcpy(intermediate, temp, 16);
-		// mix columns end
-		}
-
-		// add round key start
-        for (int c = 0; c < nb; c++) {
-            for (int r = 0; r < 4; r++) {
-                intermediate[c * 4 + r] ^=
-                    round_keys[(round + 1) * nb + c][r];
-                // print round key
-            }
-        }
-		// add round key end
-	}
-	memcpy(enc_buf, intermediate, 32);
-
-    // YOUR CODE HERE: Implemente AES decryption, write the decrypted output
-    // of enc_buf to decrypted_text
-
-    // DO NOT MODIFY
-    assert(memcmp(enc_buf, ciphertext[0], 32) == 0);
+	// DO NOT MODIFY
+	assert(memcmp(enc_buf, ciphertext[0], 32) == 0);
 	assert(memcmp(decrypted_text, plaintext[0], 32) == 0);
 	return 0;
 }
