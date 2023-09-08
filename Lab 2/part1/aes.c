@@ -18,41 +18,20 @@ print_4by4(unsigned char text[]) {
 }
 
 uint8_t
-galois_field_multiply(uint16_t byte1, uint16_t byte2) {
-	uint8_t result = 0;
-
-	// make sure byte 2 is smallest
-	uint16_t temp;
-	if (byte1 < byte2) {
-		temp  = byte1;
-		byte1 = byte2;
-		byte2 = temp;
-	}
-
-	switch (byte2) {
-	case 0:
-		result = 0;
-		break;
-	case 1:
-		result = byte1;
-		break;
-	case 2:
-		result = byte1 << 1;
-		if (byte1 & 0x80) {
-			result ^= 0x1b;
+galois_field_multiply(uint8_t byte1, uint8_t byte2) {
+	uint8_t product = 0;
+	for (int i = 0; i < 8; i++) {
+		if (byte2 & 1) {
+			product ^= byte1;
 		}
-		break;
-	case 3:
-		// 3 = 2 xor 1
-		result =
-		    galois_field_multiply(byte1, 2) ^ galois_field_multiply(byte1, 1);
-		break;
-	default:
-		printf("galois_field_multiply error\n");
-		break;
+		uint8_t carry = byte1 & 0x80;
+		byte1 <<= 1;
+		if (carry) {
+			byte1 ^= 0x1b;
+		}
+		byte2 >>= 1;
 	}
-
-	return result;
+	return product;
 }
 
 void
@@ -133,12 +112,12 @@ encode(uint8_t *plaintext,
 
 			// mix columns start
 			// clang-format off
-        uint8_t galois_field[16] = {
-            0x02, 0x03, 0x01, 0x01,
-            0x01, 0x02, 0x03, 0x01,
-            0x01, 0x01, 0x02, 0x03,
-            0x03, 0x01, 0x01, 0x02
-        };
+            uint8_t galois_field[16] = {
+                0x02, 0x03, 0x01, 0x01,
+                0x01, 0x02, 0x03, 0x01,
+                0x01, 0x01, 0x02, 0x03,
+                0x03, 0x01, 0x01, 0x02
+            };
 			// clang-format on
 
 			uint8_t mat_mult_result[16];
@@ -186,26 +165,17 @@ decode(uint8_t *ciphertext,
 	uint8_t intermediate[16];
 	uint8_t s_inverse[256];
 
-	for (int i = 0; i < 256; i++) {
-        s_inverse[s[i]] = i;
-    }
+	for (int i = 0; i < 256; i++) { s_inverse[s[i]] = i; }
 
 	// add round key
 	for (int c = 0; c < 4; c++) {
 		for (int r = 0; r < 4; r++) {
-			intermediate[c * 4 + r] ^= round_keys[NUM_ROUNDS * nb + c][r];
+			intermediate[c * 4 + r] =
+			    ciphertext[c * 4 + r] ^ round_keys[NUM_ROUNDS * nb + c][r];
 		}
 	}
-	print_4by4(ciphertext);
-	printf("\n");
 
-	for (int round = NUM_ROUNDS - 1; round >= 1; round--) {
-		// inv s box
-        for (int i = 0; i < 16; i++) { intermediate[i] = s_inverse[intermediate[i]]; }
-
-		print_4by4(intermediate);
-		printf("\n");
-
+	for (int round = NUM_ROUNDS - 1; round >= 0; round--) {
 		// inv shift array rows start
 		for (int col = 0; col < 4; col++) {
 			uint8_t temp[4];
@@ -219,20 +189,56 @@ decode(uint8_t *ciphertext,
 		}
 		// inv shift array rows end
 
-		// inv subbytes
+		// inv s box
+		for (int i = 0; i < 16; i++) {
+			intermediate[i] = s_inverse[intermediate[i]];
+		}
 
 		// add round key
 		for (int c = 0; c < nb; c++) {
 			for (int r = 0; r < 4; r++) {
 				intermediate[c * 4 + r] ^= round_keys[round * nb + c][r];
-				// print round key
-				printf("%02x ", round_keys[round * nb + c][r]);
 			}
 		}
-		printf("\n");
 
-		// inv mix columns
+		if (round != 0) {
+			// inv mix columns
+			// clang-format off
+            uint8_t galois_field[16] = {
+                0x0E, 0x0B, 0x0D, 0x09,
+                0x09, 0x0E, 0x0B, 0x0D,
+                0x0D, 0x09, 0x0E, 0x0B,
+                0x0B, 0x0D, 0x09, 0x0E
+            };
+			// clang-format on
+
+			uint8_t mat_mult_result[16];
+			for (int col = 0; col < 4; col++) {
+				// matrix multiply against galois field
+				for (int row = 0; row < 4; row++) {
+					uint8_t result = 0;
+					for (int i = 0; i < 4; i++) {
+						uint8_t num1 = intermediate[col * 4 + i];
+						uint8_t num2 = galois_field[row * 4 + i];
+						result ^= galois_field_multiply(num1, num2);
+					}
+					mat_mult_result[row * 4 + col] = result;
+				}
+			}
+			memcpy(intermediate, mat_mult_result, 16);
+
+			// flip rows and columns
+			uint8_t temp[16];
+			for (int row = 0; row < 4; row++) {
+				for (int col = 0; col < 4; col++) {
+					temp[row * 4 + col] = intermediate[col * 4 + row];
+				}
+			}
+			memcpy(intermediate, temp, 16);
+		}
 	}
+
+    memcpy(plaintext_buf, intermediate, 16);
 }
 
 int
