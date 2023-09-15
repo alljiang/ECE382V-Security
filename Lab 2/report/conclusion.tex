@@ -7,3 +7,11 @@ as a header of the plaintext before encrypting the entire message.
 The receiver can then compute the SHA-256 hash of
 the decrypted plaintext without the header and compare it to the included hash header.
 If the hashes match, the integrity of the message is verified.
+
+The decrypted output of the ciphertext output of the rsa.c program matches the original
+plaintext input. This indicates that the RSA implementation is correct.
+
+To implement integrity checking for RSA, the sender can compute the SHA-256 hash of the
+plaintext and encrypt it with the private key. The receiver can then decrypt the hash
+with the public key and compare it to the SHA-256 hash of the plaintext. If the hashes
+match, the integrity of the message is verified.

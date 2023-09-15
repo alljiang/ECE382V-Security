@@ -5,3 +5,23 @@ In the aes.c file, there are a few functions that are used to implement AES-256:
     \item encode(): encodes an input given plaintext, a key, round keys, and the s-box.
     \item decode(): decodes an input given ciphertext, a key, round keys, and the s-box. While this function is not used in this lab due to the use of CTR mode, it is still implemented and tested.
 \end{itemize}
+
+The implementation of RSA mode is primarily based on the mod\_exponentiation() function. 
+This function takes in a base, exponent, and modulus and returns the result of the exponentiation. 
+It calculates the result of the exponentiation by using the square-and-multiply algorithm.
+
+To calculate the result, it uses a uint256 struct to store the intermediate results. 
+The uint256 struct is constructed by using an array of 8 32-bit unsigned integers.
+
+In addition to this new type, there are also a few functions that were developed to
+support operations on the uint256 struct:
+\begin{itemize}
+    \item compare(): compares two uint256 structs and returns a defined value based on the comparison.
+    \item shift\_left(): shifts a uint256 struct left by a given number of bits.
+    \item shift\_right(): shifts a uint256 struct right by a given number of bits.
+    \item subtract(): subtracts two uint256 structs and returns the result.
+    \item mod(): calculates the modulus of two uint256 structs and returns the result.
+    \item multiply(): multiplies two uint256 structs and returns the result.
+    \item convert\_128\_to\_256(): converts a uint128 struct to a uint256 struct.
+    \item convert\_256\_to\_128(): converts a uint256 struct to a uint128 struct.
+\end{itemize}

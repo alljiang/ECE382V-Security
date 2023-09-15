@@ -300,6 +300,7 @@ main() {
 
 	// DO NOT MODIFY
 	char *encrypted_text = (char *) &ciphertext;
+	printf("encrypted=%s\n", encrypted_text);
 	// END DO NOT MODIFY
 
 	/* YOUR CODE HERE: Implement RSA decryption, write the decrypted output
