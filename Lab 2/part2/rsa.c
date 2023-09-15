@@ -17,17 +17,19 @@ uint256
 convert_128_to_256(uint128 a) {
 	uint256 result  = {0};
 	result.cells[0] = a.lo & 0xFFFFFFFFu;
-	result.cells[1] = a.lo >> 32u;
+	result.cells[1] = (a.lo >> 32u) & 0xFFFFFFFFu;
 	result.cells[2] = a.hi & 0xFFFFFFFFu;
-	result.cells[3] = a.hi >> 32u;
+	result.cells[3] = (a.hi >> 32u) & 0xFFFFFFFFu;
 	return result;
 }
 
 uint128
 convert_256_to_128(uint256 a) {
 	uint128 result = {0};
-	result.lo      = a.cells[0] + ((uint64_t) a.cells[1] << 32u);
-	result.hi      = a.cells[2] + ((uint64_t) a.cells[3] << 32u);
+	result.lo =
+	    (((uint64_t) a.cells[1] << 32u) | a.cells[0]) & 0xFFFFFFFFFFFFFFFFu;
+	result.hi =
+	    (((uint64_t) a.cells[3] << 32u) | a.cells[2]) & 0xFFFFFFFFFFFFFFFFu;
 	return result;
 }
 
@@ -241,7 +243,6 @@ mod_exponentiation(uint128 base_128, uint128 exponent_128, uint128 mod_128) {
 
 		if (exponent.cells[0] & 1u) {
 			// odd exponent, multiply with base using partial products
-			// ignore result.hi * base.hi since it will overflow
 			uint256 pp = multiply(base, result);
 
 			uint256 mod_result = modulus(pp, mod);
@@ -253,7 +254,7 @@ mod_exponentiation(uint128 base_128, uint128 exponent_128, uint128 mod_128) {
 			uint256 pp = multiply(base, base);
 
 			uint256 mod_result = modulus(pp, mod);
-            base               = mod_result;
+			base               = mod_result;
 
 			exponent = shift_right(exponent, 1);
 		}
@@ -286,9 +287,14 @@ main() {
 	uint128 decrypted;
 	// END DO NOT MODIFY
 
-	ciphertext = mod_exponentiation(
-	    (uint128){0, 5}, (uint128){0, 117}, (uint128){0, 19});
+	ciphertext = mod_exponentiation((uint128){0, 321},
+	                                (uint128){2, 5},
+	                                (uint128){0, 0xffffffffff});
 	printf("ciphertext=%lu %lu\n", ciphertext.hi, ciphertext.lo);
+
+	// decrypted =
+	//     mod_exponentiation(ciphertext, (uint128){1, 0xA6D2560D}, (uint128){1, 0x844dec5});
+	// printf("decrypted=%lu %lu\n", decrypted.hi, decrypted.lo);
 	return 0;
 
 	/* YOUR CODE HERE: Implement RSA encryption, write the encrypted output
