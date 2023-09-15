@@ -133,6 +133,11 @@ uint256
 subtract(uint256 a, uint256 b) {
 	uint32_t borrow = 0;
 
+	if (compare(a, b) == COMPARE_B_GREATER) {
+		printf("a < b\n");
+		while (1) {}
+	}
+
 	for (int i = 0; i < 8; i++) {
 		uint64_t a_cell = a.cells[i];
 		uint64_t b_cell = b.cells[i];
@@ -172,7 +177,7 @@ modulus_128(uint128 a, uint128 b) {
 }
 
 uint256
-modulus(uint256 a, uint256 b) {
+mod(uint256 a, uint256 b) {
 	// return a % b, assume b > 0
 	if (compare(a, b) == COMPARE_B_GREATER) {
 		return a;
@@ -201,7 +206,8 @@ modulus(uint256 a, uint256 b) {
 	       compare(a, b) == COMPARE_EQUAL) {
 		if (compare(a, x) == COMPARE_A_GREATER ||
 		    compare(a, x) == COMPARE_EQUAL) {
-			a = subtract(a, x);
+			uint256 a_original = a;
+			a                  = subtract(a, x);
 		}
 		x = shift_right(x, 1);
 	}
@@ -233,19 +239,16 @@ mod_exponentiation(uint128 base_128, uint128 exponent_128, uint128 mod_128) {
 
 	uint256 base     = convert_128_to_256(base_128);
 	uint256 exponent = convert_128_to_256(exponent_128);
-	uint256 mod      = convert_128_to_256(mod_128);
+	uint256 mod_val  = convert_128_to_256(mod_128);
+
+	base = mod(base, mod_val);
 
 	while (compare(exponent, zero) == COMPARE_A_GREATER) {
-		if (compare(base, mod) == COMPARE_A_GREATER ||
-		    compare(base, mod) == COMPARE_EQUAL) {
-			base = modulus(base, mod);
-		}
-
 		if (exponent.cells[0] & 1u) {
 			// odd exponent, multiply with base using partial products
 			uint256 pp = multiply(base, result);
 
-			uint256 mod_result = modulus(pp, mod);
+			uint256 mod_result = mod(pp, mod_val);
 			result             = mod_result;
 
 			exponent = subtract(exponent, one);
@@ -253,7 +256,7 @@ mod_exponentiation(uint128 base_128, uint128 exponent_128, uint128 mod_128) {
 			// even exponent, square base and divide exponent by 2
 			uint256 pp = multiply(base, base);
 
-			uint256 mod_result = modulus(pp, mod);
+			uint256 mod_result = mod(pp, mod_val);
 			base               = mod_result;
 
 			exponent = shift_right(exponent, 1);
@@ -287,32 +290,16 @@ main() {
 	uint128 decrypted;
 	// END DO NOT MODIFY
 
-	ciphertext = mod_exponentiation((uint128){0, 321},
-	                                (uint128){2, 5},
-	                                (uint128){0, 0xffffffffff});
-	printf("ciphertext=%lu %lu\n", ciphertext.hi, ciphertext.lo);
-
-	// decrypted =
-	//     mod_exponentiation(ciphertext, (uint128){1, 0xA6D2560D}, (uint128){1, 0x844dec5});
-	// printf("decrypted=%lu %lu\n", decrypted.hi, decrypted.lo);
-	return 0;
-
 	/* YOUR CODE HERE: Implement RSA encryption, write the encrypted output
 	 * of plaintext to ciphertext */
 	uint128 message = {0, 0};
-	for (int i = 0; i < strlen(plaintext); i++) {
-		uint8_t high_bits = message.lo >> 56u;
-		message.lo <<= 8u;
-		message.lo += plaintext[i];
-		message.hi <<= 8u;
-		message.hi += high_bits;
-	}
+	memcpy(&message.hi, plaintext, strlen(plaintext));
 
+	// print message
 	ciphertext = mod_exponentiation(message, (uint128){0, pubExp}, modulus);
 
 	// DO NOT MODIFY
 	char *encrypted_text = (char *) &ciphertext;
-	printf("encrypted=%s\n", encrypted_text);
 	// END DO NOT MODIFY
 
 	/* YOUR CODE HERE: Implement RSA decryption, write the decrypted output
