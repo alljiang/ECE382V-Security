@@ -13,6 +13,24 @@ typedef struct uint256 {
 	uint32_t cells[8];
 } uint256;
 
+uint256
+convert_128_to_256(uint128 a) {
+	uint256 result  = {0};
+	result.cells[0] = a.lo & 0xFFFFFFFFu;
+	result.cells[1] = a.lo >> 32u;
+	result.cells[2] = a.hi & 0xFFFFFFFFu;
+	result.cells[3] = a.hi >> 32u;
+	return result;
+}
+
+uint128
+convert_256_to_128(uint256 a) {
+	uint128 result = {0};
+	result.lo      = a.cells[0] + ((uint64_t) a.cells[1] << 32u);
+	result.hi      = a.cells[2] + ((uint64_t) a.cells[3] << 32u);
+	return result;
+}
+
 uint128
 shift_right_128(uint128 a, uint8_t count) {
 	for (int i = 0; i < count; i++) {
@@ -41,10 +59,25 @@ shift_right(uint256 a, uint8_t count) {
 		for (int j = 0; j < 8; j++) {
 			int next_cell_lsb = 0;
 			if (j != 7) {
-				next_cell_lsb = cells[j + 1] & 1u;
+				next_cell_lsb = a.cells[j + 1] & 1u;
 			}
-            a.cells[j] >>= 1u;
-            a.cells[j] |= next_cell_lsb << 31u;
+			a.cells[j] >>= 1u;
+			a.cells[j] |= next_cell_lsb << 31u;
+		}
+	}
+	return a;
+}
+
+uint256
+shift_left(uint256 a, uint8_t count) {
+	for (int i = 0; i < count; i++) {
+		for (int j = 7; j >= 0; j--) {
+			int prev_cell_msb = 0;
+			if (j != 0) {
+				prev_cell_msb = (a.cells[j - 1] >> 31u) & 1u;
+			}
+			a.cells[j] <<= 1u;
+			a.cells[j] |= prev_cell_msb;
 		}
 	}
 	return a;
@@ -110,7 +143,7 @@ subtract(uint256 a, uint256 b) {
 }
 
 uint128
-modulus(uint128 a, uint128 b) {
+modulus_128(uint128 a, uint128 b) {
 	// return a % b, assume b > 0
 	if (b.hi == 0 && b.lo == 0) {
 		printf("modulus by zero\n");
@@ -118,7 +151,44 @@ modulus(uint128 a, uint128 b) {
 	}
 
 	uint128 x      = b;
-	uint128 half_a = shift_right(a, 1);
+	uint128 half_a = shift_right_128(a, 1);
+
+	while (compare_128(x, half_a) == COMPARE_B_GREATER ||
+	       compare_128(x, half_a) == COMPARE_EQUAL) {
+		x = shift_left_128(x, 1);
+	}
+
+	while (compare_128(a, b) == COMPARE_A_GREATER ||
+	       compare_128(a, b) == COMPARE_EQUAL) {
+		if (compare_128(a, x) == COMPARE_A_GREATER ||
+		    compare_128(a, x) == COMPARE_EQUAL) {
+			a = subtract_128(a, x);
+		}
+		x = shift_right_128(x, 1);
+	}
+	return a;
+}
+
+uint256
+modulus(uint256 a, uint256 b) {
+	// return a % b, assume b > 0
+	if (compare(a, b) == COMPARE_B_GREATER) {
+		return a;
+	}
+
+	// make sure b isn't 0
+	for (int i = 7; i >= 0; i--) {
+		if (b.cells[i] != 0) {
+			break;
+		}
+		if (i == 0) {
+			printf("modulus by zero\n");
+			while (1) {}
+		}
+	}
+
+	uint256 x      = b;
+	uint256 half_a = shift_right(a, 1);
 
 	while (compare(x, half_a) == COMPARE_B_GREATER ||
 	       compare(x, half_a) == COMPARE_EQUAL) {
@@ -152,44 +222,43 @@ multiply(uint256 a, uint256 b) {
 }
 
 uint128
-mod_exponentiation(uint128 base, uint128 exponent, uint128 mod) {
-	uint128 result = {0, 1};
+mod_exponentiation(uint128 base_128, uint128 exponent_128, uint128 mod_128) {
+	uint256 zero = {0};
+	uint256 one  = {0};
+	one.cells[0] = 1;
 
-	while (exponent.hi | exponent.lo) {
+	uint256 result = one;
+
+	uint256 base     = convert_128_to_256(base_128);
+	uint256 exponent = convert_128_to_256(exponent_128);
+	uint256 mod      = convert_128_to_256(mod_128);
+
+	while (compare(exponent, zero) == COMPARE_A_GREATER) {
 		if (compare(base, mod) == COMPARE_A_GREATER ||
 		    compare(base, mod) == COMPARE_EQUAL) {
 			base = modulus(base, mod);
 		}
 
-		if (exponent.lo & 1) {
+		if (exponent.cells[0] & 1u) {
 			// odd exponent, multiply with base using partial products
 			// ignore result.hi * base.hi since it will overflow
-			uint64_t pp_high = (base.hi * result.lo + base.lo * result.hi +
-			                    result.lo * result.hi) /
-			                   mod.lo;
-			uint64_t pp_low = base.lo * result.lo;
+			uint256 pp = multiply(base, result);
 
-			uint128 mod_result = modulus((uint128){pp_high, pp_low}, mod);
-			result.hi          = mod_result.hi;
-			result.lo          = mod_result.lo;
+			uint256 mod_result = modulus(pp, mod);
+			result             = mod_result;
 
-			exponent.lo--;
+			exponent = subtract(exponent, one);
 		} else {
 			// even exponent, square base and divide exponent by 2
-			// ignore base.hi * base.hi since it will overflow
-			uint64_t pp_high =
-			    (base.hi * base.lo * 2 + base.lo * base.lo) / mod.lo;
-			uint64_t pp_low = base.lo * base.lo;
+			uint256 pp = multiply(base, base);
 
-			uint128 mod_result = modulus((uint128){pp_high, pp_low}, mod);
-			base.hi            = mod_result.hi;
-			base.lo            = mod_result.lo;
+			uint256 mod_result = modulus(pp, mod);
+            base               = mod_result;
 
-			exponent.lo = (exponent.lo >> 1) | (exponent.hi << 63);
-			exponent.hi >>= 1;
+			exponent = shift_right(exponent, 1);
 		}
 	}
-	return result;
+	return convert_256_to_128(result);
 }
 
 int
@@ -217,11 +286,9 @@ main() {
 	uint128 decrypted;
 	// END DO NOT MODIFY
 
-	uint128 test = multiply((uint128){0, 10}, (uint128){0, 10});
-	printf("test=%lu %lu\n", test.hi, test.lo);
-	// ciphertext = mod_exponentiation((uint128){0, 83}, (uint128){0,
-	// 7},(uint128){0, 143}); printf("ciphertext=%lu %lu\n", ciphertext.hi,
-	// ciphertext.lo);
+	ciphertext = mod_exponentiation(
+	    (uint128){0, 5}, (uint128){0, 117}, (uint128){0, 19});
+	printf("ciphertext=%lu %lu\n", ciphertext.hi, ciphertext.lo);
 	return 0;
 
 	/* YOUR CODE HERE: Implement RSA encryption, write the encrypted output
