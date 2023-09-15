@@ -357,8 +357,20 @@ main() {
 		}
 	}
 
+    printf("Encrypted text:\n");
+    print_4by4(enc_buf);
+    printf("\n");
+    print_4by4(enc_buf + 16);
+    printf("\n");
+    printf("Decrypted text:\n");
+    print_4by4(decrypted_text);
+    printf("\n");
+    print_4by4(decrypted_text + 16);
+    printf("\n");
+
 	// DO NOT MODIFY
 	assert(memcmp(enc_buf, ciphertext[0], 32) == 0);
 	assert(memcmp(decrypted_text, plaintext[0], 32) == 0);
+
 	return 0;
 }

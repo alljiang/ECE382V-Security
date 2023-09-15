@@ -1,0 +1,9 @@
+The output of the aes.c program matches the expected output. 
+This indicates that the AES implementation is correct.
+
+One possible addition to this AES implementation is to integrate integrity checks.
+This can be done by computing the SHA-256 hash of the plaintext and including it
+as a header of the plaintext before encrypting the entire message. 
+The receiver can then compute the SHA-256 hash of
+the decrypted plaintext without the header and compare it to the included hash header.
+If the hashes match, the integrity of the message is verified.

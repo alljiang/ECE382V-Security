@@ -1,0 +1,7 @@
+The implementation of AES-256 followed the NIST standard for AES-256. 
+In the aes.c file, there are a few functions that are used to implement AES-256:
+\begin{itemize}
+    \item calculate\_round\_keys(): generates all keys needed given a key and the s-box.
+    \item encode(): encodes an input given plaintext, a key, round keys, and the s-box.
+    \item decode(): decodes an input given ciphertext, a key, round keys, and the s-box. While this function is not used in this lab due to the use of CTR mode, it is still implemented and tested.
+\end{itemize}
